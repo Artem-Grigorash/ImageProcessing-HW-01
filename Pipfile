@@ -10,6 +10,7 @@ torchaudio = "*"
 requests = "*"
 beautifulsoup4 = "*"
 tqdm = "*"
+google-images-download = "*"
 
 [dev-packages]
 
