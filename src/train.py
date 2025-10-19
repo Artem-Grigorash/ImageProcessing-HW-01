@@ -9,6 +9,8 @@ from torch.optim.optimizer import Optimizer
 from torch.utils.data import DataLoader
 from sklearn.metrics import f1_score
 from tqdm import tqdm
+import pandas as pd
+import matplotlib.pyplot as plt
 
 from model.swin import create_swin_classifier
 from model.vit import create_vit_classifier
@@ -27,7 +29,8 @@ def get_device() -> torch.device:
     return torch.device("cpu")
 
 
-def train_one_epoch(model: nn.Module, dataloader: DataLoader, criterion: nn.Module, optimizer: Optimizer, device: torch.device) -> Tuple[float, float]:
+def train_one_epoch(model: nn.Module, dataloader: DataLoader, criterion: nn.Module, optimizer: Optimizer,
+                    device: torch.device) -> Tuple[float, float]:
     model.train()
     running_loss: float = 0.0
     correct_predictions: torch.Tensor = torch.tensor(0)
@@ -59,7 +62,8 @@ def train_one_epoch(model: nn.Module, dataloader: DataLoader, criterion: nn.Modu
     return epoch_loss, epoch_acc
 
 
-def validate_one_epoch(model: nn.Module, dataloader: DataLoader, criterion: nn.Module, device: torch.device) -> Tuple[float, float, float]:
+def validate_one_epoch(model: nn.Module, dataloader: DataLoader, criterion: nn.Module, device: torch.device) -> Tuple[
+    float, float, float]:
     model.eval()
     running_loss: float = 0.0
     correct_predictions: torch.Tensor = torch.tensor(0)
@@ -86,24 +90,64 @@ def validate_one_epoch(model: nn.Module, dataloader: DataLoader, criterion: nn.M
 
     epoch_loss: float = running_loss / total_samples
     epoch_acc: float = correct_predictions / total_samples
-    epoch_f1: float = f1_score(all_labels, all_preds, average='macro')
+    epoch_f1: float = f1_score(all_labels, all_preds, average='macro', zero_division=0)
 
     return epoch_loss, epoch_acc, epoch_f1
 
 
+def save_and_plot_history(history: List[dict], model_name: str, run_timestamp: str, weights_dir: str):
+    history_df = pd.DataFrame(history)
+    csv_filename = f"{model_name}-{run_timestamp}-metrics.csv"
+    csv_path = os.path.join(weights_dir, csv_filename)
+    history_df.to_csv(csv_path, index=False)
+    print(f"Metrics history saved to {csv_path}")
+
+    plt.figure(figsize=(15, 6))
+
+    plt.subplot(1, 2, 1)
+    plt.plot(history_df['epoch'], history_df['train_loss'], label='Train Loss')
+    plt.plot(history_df['epoch'], history_df['val_loss'], label='Validation Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.title(f'{model_name} - Loss vs. Epoch')
+    plt.grid(True)
+
+    plt.subplot(1, 2, 2)
+    plt.plot(history_df['epoch'], history_df['train_acc'], label='Train Accuracy')
+    plt.plot(history_df['epoch'], history_df['val_acc'], label='Validation Accuracy')
+    plt.plot(history_df['epoch'], history_df['val_f1'], label='Validation F1-score')
+    plt.xlabel('Epoch')
+    plt.ylabel('Metric')
+    plt.legend()
+    plt.title(f'{model_name} - Metrics vs. Epoch')
+    plt.grid(True)
+
+    plt.suptitle(f'Training Metrics for {model_name} ({run_timestamp})')
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+
+    plot_filename = f"{model_name}-{run_timestamp}-metrics.png"
+    plot_path = os.path.join(weights_dir, plot_filename)
+    plt.savefig(plot_path)
+    plt.close()
+    print(f"Metrics plot saved to {plot_path}")
+
+
 def train_model(
-    model: nn.Module,
-    model_name: str,
-    train_loader: DataLoader,
-    val_loader: DataLoader,
-    criterion: nn.Module,
-    optimizer: Optimizer,
-    device: torch.device,
-    num_epochs: int,
-    weights_dir: str
+        model: nn.Module,
+        model_name: str,
+        train_loader: DataLoader,
+        val_loader: DataLoader,
+        criterion: nn.Module,
+        optimizer: Optimizer,
+        device: torch.device,
+        num_epochs: int,
+        weights_dir: str
 ) -> None:
     best_val_f1: float = 0.0
     os.makedirs(weights_dir, exist_ok=True)
+    history = []
+    run_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
     for epoch in range(num_epochs):
         print(f"\n--- Epoch {epoch + 1}/{num_epochs} ---")
@@ -114,32 +158,50 @@ def train_model(
         val_loss, val_acc, val_f1 = validate_one_epoch(model, val_loader, criterion, device)
         print(f"Validation Loss: {val_loss:.4f}, Validation Acc: {val_acc:.4f}, Validation F1: {val_f1:.4f}")
 
+        history.append({
+            'epoch': epoch + 1,
+            'train_loss': train_loss,
+            'train_acc': train_acc,
+            'val_loss': val_loss,
+            'val_acc': val_acc,
+            'val_f1': val_f1
+        })
+
         if val_f1 > best_val_f1:
             best_val_f1 = val_f1
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            save_path = os.path.join(weights_dir, f"{model_name}-{timestamp}-f1_{best_val_f1:.4f}.pth")
+            model_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            save_path = os.path.join(weights_dir, f"{model_name}-{model_timestamp}-f1_{best_val_f1:.4f}.pth")
             torch.save(model.state_dict(), save_path)
             print(f"New best model saved to {save_path} with F1-score: {best_val_f1:.4f}")
 
     print("\nTraining complete!")
 
+    save_and_plot_history(
+        history=history,
+        model_name=model_name,
+        run_timestamp=run_timestamp,
+        weights_dir=weights_dir
+    )
+
+
+SOURCE_DIRS = ['mac-merged', 'laptops-merged']
+PROCESSED_DIR = 'data/processed'
+WEIGHTS_DIR = 'models/weights'
+MODEL_NAME = 'vit16'
+
+NUM_CLASSES = 2
+BATCH_SIZE = 32
+NUM_EPOCHS = 30
+TARGET_AUG_COUNT = 1024
+L1_LAMBDA = 1e-5
+L2_LAMBDA = 1e-4
 
 if __name__ == '__main__':
-    SOURCE_DIRS = ['mac-merged', 'laptops-merged']
-    PROCESSED_DIR = 'data/processed'
-    WEIGHTS_DIR = 'models/weights'
-    MODEL_NAME = 'resnet152'
-
-    NUM_CLASSES = 2
-    BATCH_SIZE = 32
-    NUM_EPOCHS = 30
-
-
     setup_dataset(
         source_base_dir='data',
         processed_base_dir=PROCESSED_DIR,
         source_class_names=SOURCE_DIRS,
-        target_aug_count=1024
+        target_aug_count=TARGET_AUG_COUNT
     )
 
     train_loader, val_loader, test_loader = get_dataloaders(
@@ -150,12 +212,10 @@ if __name__ == '__main__':
     device = get_device()
     print(f"Selected device: {device}")
 
-    model, _ = create_resnet_classifier(num_classes=NUM_CLASSES, pretrained=True, freeze_backbone=False)
+    model, _ = create_vit_classifier(num_classes=NUM_CLASSES, pretrained=True, freeze_backbone=False)
     model = model.to(device)
 
     criterion = nn.CrossEntropyLoss()
-    L1_LAMBDA = 1e-5  # Coefficient for L1 regularization (set to 0 to disable)
-    L2_LAMBDA = 1e-4  # Coefficient for L2 regularization
 
     optimizer = optim.AdamW(model.parameters(), weight_decay=L2_LAMBDA)
 
@@ -170,4 +230,3 @@ if __name__ == '__main__':
         num_epochs=NUM_EPOCHS,
         weights_dir=WEIGHTS_DIR
     )
-

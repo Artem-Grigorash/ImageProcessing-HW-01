@@ -13,6 +13,8 @@ scikit-learn = "*"
 torch = "*"
 torchvision = "*"
 torchaudio = "*"
+pandas = "*"
+matplotlib = "*"
 
 [dev-packages]
 
