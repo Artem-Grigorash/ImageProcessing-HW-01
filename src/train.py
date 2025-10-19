@@ -191,7 +191,7 @@ MODEL_NAME = 'vit16'
 
 NUM_CLASSES = 2
 BATCH_SIZE = 32
-NUM_EPOCHS = 30
+NUM_EPOCHS = 50
 TARGET_AUG_COUNT = 1024
 L1_LAMBDA = 1e-5
 L2_LAMBDA = 1e-4
@@ -217,7 +217,7 @@ if __name__ == '__main__':
 
     criterion = nn.CrossEntropyLoss()
 
-    optimizer = optim.AdamW(model.parameters(), weight_decay=L2_LAMBDA)
+    optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay=L2_LAMBDA)
 
     train_model(
         model=model,

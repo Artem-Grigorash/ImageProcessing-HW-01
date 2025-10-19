@@ -8,9 +8,13 @@ from torchvision.models import ResNet50_Weights, ResNet152_Weights  # type: igno
 
 def _get_default_weights(pretrained: bool):
     if pretrained:
-        return ResNet152_Weights.DEFAULT
+        return ResNet50_Weights.DEFAULT
     return None
 
+def load_resnet_from_weights(weights_path: str, num_classes: int) -> nn.Module:
+    model, _ = create_resnet_classifier(num_classes=num_classes, pretrained=False)
+    model.load_state_dict(torch.load(weights_path, map_location='cpu'))
+    return model
 
 def create_resnet_classifier(
         num_classes: int = 1000,
@@ -19,7 +23,7 @@ def create_resnet_classifier(
         weights: Optional[object] = None,
 ) -> Tuple[nn.Module, Optional[object]]:
     used_weights = weights if weights is not None else _get_default_weights(pretrained)
-    model = models.resnet152(weights=used_weights)
+    model = models.resnet50(weights=used_weights)
 
     in_features = model.fc.in_features
     if num_classes != model.fc.out_features:

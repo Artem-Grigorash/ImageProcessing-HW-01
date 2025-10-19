@@ -11,6 +11,10 @@ def _get_default_weights(pretrained: bool):
         return Swin_T_Weights.DEFAULT
     return None
 
+def load_swin_from_weights(weights_path: str, num_classes: int) -> nn.Module:
+    model, _ = create_swin_classifier(num_classes=num_classes, pretrained=False)
+    model.load_state_dict(torch.load(weights_path, map_location='cpu'))
+    return model
 
 def create_swin_classifier(
         num_classes: int = 1000,
