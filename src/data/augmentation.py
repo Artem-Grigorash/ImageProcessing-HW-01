@@ -67,12 +67,17 @@ def augment_and_balance_dataset(base_dir='data', source_class_dirs=None, target_
         print(f"\nProcessing class: {class_name}")
 
         if image_count < target_count:
-            print(f"  - Copying {image_count} original images to '{output_class_dir}'...")
+            # Upsampling: Augment all original images, then generate more to meet the target.
+            print(f"  - Augmenting all {image_count} original images...")
             for image_path in class_paths[class_name]:
-                shutil.copy(image_path, output_class_dir)
+                image = Image.open(image_path).convert('RGB')
+                augmented_image = augmentation_transform(image)
+                base_name = os.path.basename(image_path)
+                output_path = os.path.join(output_class_dir, base_name)
+                augmented_image.save(output_path)
 
             num_to_generate = target_count - image_count
-            print(f"  - Augmenting. Need to generate {num_to_generate} new images to reach {target_count}.")
+            print(f"  - Generating {num_to_generate} additional augmented images.")
 
             for j in range(num_to_generate):
                 source_image_path = random.choice(class_paths[class_name])
@@ -88,19 +93,27 @@ def augment_and_balance_dataset(base_dir='data', source_class_dirs=None, target_
                 if (j + 1) % 200 == 0:
                     print(f"    ... generated {j + 1}/{num_to_generate} images")
 
-            print(f"  - Finished generating {num_to_generate} images.")
-
-        elif image_count > target_count:
-            print(f"  - Down-sampling. Randomly selecting {target_count} of {image_count} images.")
-            selected_paths = random.sample(class_paths[class_name], target_count)
-            for image_path in selected_paths:
-                shutil.copy(image_path, output_class_dir)
-            print(f"  - Finished copying {target_count} images.")
+            print(f"  - Finished. Total images: {target_count}.")
 
         else:
-            print(f"  - Size matches target ({target_count}). Copying all original images.")
-            for image_path in class_paths[class_name]:
-                shutil.copy(image_path, output_class_dir)
+            # Downsampling or Equal Size: Select the correct number of images and augment them.
+            paths_to_process = []
+            if image_count > target_count:
+                print(f"  - Down-sampling: randomly selecting and augmenting {target_count} of {image_count} images.")
+                paths_to_process = random.sample(class_paths[class_name], target_count)
+            else:  # image_count == target_count
+                print(f"  - Size matches target ({target_count}). Augmenting all original images.")
+                paths_to_process = class_paths[class_name]
+
+            for image_path in paths_to_process:
+                image = Image.open(image_path).convert('RGB')
+                augmented_image = augmentation_transform(image)
+                base_name = os.path.basename(image_path)
+                output_path = os.path.join(output_class_dir, base_name)
+                augmented_image.save(output_path)
+
+            print(f"  - Finished processing {len(paths_to_process)} images.")
+
 
     print("\n--- Data processing complete! ---")
     print(f"New dataset is available in the '{target_class_dirs}' directories inside '{base_dir}'.")

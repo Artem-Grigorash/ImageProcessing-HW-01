@@ -10,6 +10,8 @@ from torch.utils.data import DataLoader
 from sklearn.metrics import f1_score
 from tqdm import tqdm
 
+from model.swin import create_swin_classifier
+from model.vit import create_vit_classifier
 from src.data.dataset import setup_dataset, get_dataloaders
 from src.model.resnet import create_resnet_classifier
 
@@ -45,12 +47,12 @@ def train_one_epoch(model: nn.Module, dataloader: DataLoader, criterion: nn.Modu
         running_loss += loss.item() * inputs.size(0)
 
         _, preds = torch.max(outputs, 1)
-        correct_predictions += torch.sum(preds == labels.data)
+        correct_predictions += torch.sum(preds == labels).item()
         total_samples += labels.size(0)
 
     epoch_loss: float = running_loss / total_samples
-    epoch_acc: float = correct_predictions.float() / total_samples
-    return epoch_loss, epoch_acc.item()
+    epoch_acc: float = correct_predictions / total_samples
+    return epoch_loss, epoch_acc
 
 
 def validate_one_epoch(model: nn.Module, dataloader: DataLoader, criterion: nn.Module, device: torch.device) -> Tuple[float, float, float]:
@@ -72,17 +74,17 @@ def validate_one_epoch(model: nn.Module, dataloader: DataLoader, criterion: nn.M
             running_loss += loss.item() * inputs.size(0)
 
             _, preds = torch.max(outputs, 1)
-            correct_predictions += torch.sum(preds == labels.data)
+            correct_predictions += torch.sum(preds == labels).item()
             total_samples += labels.size(0)
 
             all_preds.extend(preds.cpu().numpy())
             all_labels.extend(labels.cpu().numpy())
 
     epoch_loss: float = running_loss / total_samples
-    epoch_acc: float = correct_predictions.float() / total_samples
+    epoch_acc: float = correct_predictions / total_samples
     epoch_f1: float = f1_score(all_labels, all_preds, average='macro')
 
-    return epoch_loss, epoch_acc.item(), epoch_f1
+    return epoch_loss, epoch_acc, epoch_f1
 
 
 def train_model(
@@ -126,7 +128,7 @@ if __name__ == '__main__':
 
     NUM_CLASSES = 2
     BATCH_SIZE = 32
-    NUM_EPOCHS = 10
+    NUM_EPOCHS = 30
 
 
     setup_dataset(

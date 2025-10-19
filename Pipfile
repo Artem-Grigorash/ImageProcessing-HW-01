@@ -4,15 +4,15 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-torch = "*"
-torchvision = "*"
-torchaudio = "*"
 requests = "*"
 beautifulsoup4 = "*"
 tqdm = "*"
 selenium = "==3.141.0"
 bing-image-downloader = "*"
 scikit-learn = "*"
+torch = "*"
+torchvision = "*"
+torchaudio = "*"
 
 [dev-packages]
 

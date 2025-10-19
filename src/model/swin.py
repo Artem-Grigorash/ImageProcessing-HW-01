@@ -8,7 +8,7 @@ from torchvision.models import Swin_T_Weights, Swin_S_Weights, Swin_B_Weights  #
 
 def _get_default_weights(pretrained: bool):
     if pretrained:
-        return Swin_B_Weights.DEFAULT
+        return Swin_T_Weights.DEFAULT
     return None
 
 
@@ -20,7 +20,7 @@ def create_swin_classifier(
 ) -> Tuple[nn.Module, Optional[object]]:
     used_weights = weights if weights is not None else _get_default_weights(pretrained)
 
-    model = models.swin_b(weights=used_weights)
+    model = models.swin_t(weights=used_weights)
 
     in_features = model.head.in_features
     if num_classes != model.head.out_features:
