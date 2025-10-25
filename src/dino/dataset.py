@@ -135,7 +135,6 @@ def get_device():
     return device
 
 def imshow(inp, title=None):
-    """Display image for Tensor."""
     inp = inp.numpy().transpose((1, 2, 0))
     mean = np.array([0.485, 0.456, 0.406])
     std = np.array([0.229, 0.224, 0.225])
@@ -146,6 +145,37 @@ def imshow(inp, title=None):
         plt.title(title)
     plt.pause(0.001)  # pause a bit so that plots are updated
 
+
+def calculate_class_weights(train_dataset, device):
+    print("Calculating class weights for training set...")
+
+    try:
+        labels = [train_dataset.dataset.samples[i][1] for i in train_dataset.indices]
+    except AttributeError:
+        print("Could not get 'samples' or 'indices' from train_dataset.")
+        print("Weights will not be applied.")
+        return None
+    except Exception as e:
+        print(f"An error occurred during weight calculation: {e}")
+        print("Weights will not be applied.")
+        return None
+
+    class_counts = torch.bincount(torch.tensor(labels))
+
+    if len(class_counts) == 0:
+        print("No labels found in training set. Weights will not be applied.")
+        return None
+
+    total_samples = float(sum(class_counts))
+    num_classes = float(len(class_counts))
+
+    weights = total_samples / (num_classes * class_counts.float())
+
+    print(f"Found {int(total_samples)} samples.")
+    for i, count in enumerate(class_counts):
+        print(f"  Class {i}: {count} samples, Weight: {weights[i]:.4f}")
+
+    return weights.to(device)
 
 def load_and_prepare_data():
     torch.manual_seed(RANDOM_SEED)
@@ -158,8 +188,8 @@ def load_and_prepare_data():
             DATA_DIR, TRAIN_RATIO, data_transforms, g
         )
     except FileNotFoundError:
-        print(f"Error: Директория с данными не найдена по пути '{DATA_DIR}'")
-        print("Пожалуйста, скачайте и распакуйте набор данных в правильное место.")
+        print(f"Error: Data directory not found at '{DATA_DIR}'")
+        print("Please download and unpack the dataset to the correct location.")
         return
 
     dataloaders, dataset_sizes = create_dataloaders(
@@ -170,12 +200,35 @@ def load_and_prepare_data():
 
     device = get_device()
 
-    print("\nЗагрузка и подготовка данных завершены.")
+    print("\nData loading and preparation complete.")
 
+    fig = plt.figure(figsize=(12, 12))
+    plt.suptitle("Image examples from datasets (Train, Val, Test)", fontsize=16)
 
-    inputs, classes = next(iter(dataloaders['train']))
-    out = torchvision.utils.make_grid(inputs[:6])
-    imshow(out, title=[class_names[x] for x in classes[:6]])
+    splits = ['train', 'val', 'test']
+    num_images_to_show = 6
+
+    for i, split in enumerate(splits):
+        inputs, classes = next(iter(dataloaders[split]))
+
+        out = torchvision.utils.make_grid(inputs[:num_images_to_show])
+
+        ax = fig.add_subplot(3, 1, i + 1)
+
+        out_np = out.numpy().transpose((1, 2, 0))
+        mean = np.array([0.485, 0.456, 0.406])
+        std = np.array([0.229, 0.224, 0.225])
+        out_np = std * out_np + mean
+        out_np = np.clip(out_np, 0, 1)
+
+        ax.imshow(out_np)
+        ax.axis('off')
+
+        labels_title = [class_names[x] for x in classes[:num_images_to_show]]
+        ax.set_title(f'{split.capitalize()} (Examples: {", ".join(labels_title)})', fontsize=12)
+
+    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+    plt.show()
 
     return dataloaders, dataset_sizes, class_names, device
 
