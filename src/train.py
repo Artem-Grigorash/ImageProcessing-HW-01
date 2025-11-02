@@ -14,20 +14,24 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src.data.dataset import setup_dataset, get_dataloaders
+from src.model.clip import create_clip_classifier
 from src.model.dino_vit import create_dino_vit_classifier
 from src.model.dino_convnext import create_dino_swin_classifier
+from src.model.resnet import create_resnet_classifier
+from src.model.swin import create_swin_classifier
+from src.model.vit import create_vit_classifier
 
 warnings.filterwarnings("ignore", message=".*Redirects are currently not supported in Windows or MacOs.*")
 
 
 def get_device() -> torch.device:
-    if torch.cuda.is_available():
-        print("Using CUDA.")
-        return torch.device("cuda:0")
-    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-        print("Using Apple MPS.")
-        return torch.device("mps")
-    print("Using CPU.")
+    # if torch.cuda.is_available():
+    #     print("Using CUDA.")
+    #     return torch.device("cuda:0")
+    # if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+    #     print("Using Apple MPS.")
+    #     return torch.device("mps")
+    # print("Using CPU.")
     return torch.device("cpu")
 
 
@@ -197,7 +201,7 @@ MODEL_NAME = 'convnext'
 
 NUM_CLASSES = 2
 BATCH_SIZE = 32
-NUM_EPOCHS = 50
+NUM_EPOCHS = 10
 TARGET_AUG_COUNT = 1024
 L1_LAMBDA = 1e-6
 L2_LAMBDA = 1e-5
@@ -219,7 +223,13 @@ if __name__ == '__main__':
     device = get_device()
     print(f"Selected device: {device}")
 
-    model = create_dino_swin_classifier(num_classes=NUM_CLASSES)
+    model, preprocess = create_clip_classifier(
+        num_classes=2,
+        pretrained=True,
+        train_only_last_layer=True,  # только последний слой
+        model_name="ViT-B-16",
+        pretrained_dataset="openai"
+    )
     model = model.to(device)
 
     criterion = nn.CrossEntropyLoss()

@@ -1,81 +1,84 @@
 import torch
 import torch.nn as nn
+import timm
 from PIL import Image
-from transformers import AutoImageProcessor, AutoModel
-from transformers.modeling_outputs import ImageClassifierOutput
-from typing import List, Union
+from torchvision import transforms
 
 
 class DinoV3SwinClassifier(nn.Module):
-
-    def __init__(self, model_name: str, num_labels: int):
-        super(DinoV3SwinClassifier, self).__init__()
+    def __init__(self, model_name: str, num_labels: int, train_only_last_layer: bool = False):
+        super().__init__()
         self.num_labels = num_labels
-        # self.processor = AutoImageProcessor.from_pretrained(model_name)
-        self.base_model = AutoModel.from_pretrained(model_name)
 
-        in_features = self.base_model.config.hidden_sizes[-1]
+        # Загружаем предобученную модель DINOv3
+        self.base_model = timm.create_model(model_name, pretrained=True, num_classes=0)
+        in_features = self.base_model.num_features
 
+        # Классификационная голова
         self.classifier_head = nn.Linear(in_features, num_labels)
 
-    def forward(self, pixel_values: torch.Tensor):
+        # Замораживаем весь backbone, если указано
+        if train_only_last_layer:
+            for param in self.base_model.parameters():
+                param.requires_grad = False
 
-        # device = self.classifier_head.weight.device
-
-        outputs = self.base_model(pixel_values=pixel_values)
-        image_features = outputs.pooler_output
-
-        logits = self.classifier_head(image_features)
-
+    def forward(self, x: torch.Tensor):
+        features = self.base_model(x)
+        logits = self.classifier_head(features)
         return logits
 
+
 def create_dino_swin_classifier(
-        num_classes: int = 1000,
-        freeze_backbone: bool = False,
-        model_name: str = "facebook/dinov3-convnext-small-pretrain-lvd1689m"
+        num_classes: int = 2,
+        pretrained: bool = True,
+        train_only_last_layer: bool = False,
+        model_name: str = "vit_base_patch16_dinov3"
 ) -> DinoV3SwinClassifier:
-    model = DinoV3SwinClassifier(model_name, num_classes)
-
-    if freeze_backbone:
-        for param in model.base_model.parameters():
-            param.requires_grad = False
-
+    model = DinoV3SwinClassifier(model_name, num_classes, train_only_last_layer)
     return model
 
 
 def load_dinoV3_swin():
-
-    model_name = "facebook/dinov3-convnext-small-pretrain-lvd1689m"
-    processor = AutoImageProcessor.from_pretrained(model_name)
-
+    model_name = "vit_base_patch16_dinov3"
     image_path = "data/mac-merged/0.png"
+
+    # Препроцессинг картинки под timm
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=(0.5, 0.5, 0.5),
+            std=(0.5, 0.5, 0.5)
+        ),
+    ])
+
     try:
         image = Image.open(image_path).convert('RGB')
     except FileNotFoundError:
-        print(f"Error: Image file not found at {image_path}")
-        print("Please update the 'image_path' variable to a valid file.")
+        print(f"❌ Файл не найден: {image_path}")
         return
 
-    num_labels = 2
+    image_tensor = transform(image).unsqueeze(0)
 
-    model = create_dino_swin_classifier(num_classes=num_labels, model_name=model_name)
+    # Создаём модель: backbone заморожен, учится только последний слой
+    model = create_dino_swin_classifier(
+        num_classes=2,
+        pretrained=True,
+        train_only_last_layer=True,
+        model_name=model_name
+    )
+
     model.eval()
 
-    inputs = processor(images=image, return_tensors="pt")
-    pixel_values = inputs.pixel_values # Это тензор нужного формата
-
     with torch.no_grad():
-        logits = model(pixel_values=pixel_values)
+        logits = model(image_tensor)
+        probs = torch.nn.functional.softmax(logits, dim=1)
+        pred_class = probs.argmax(dim=1).item()
 
-    probabilities = torch.nn.functional.softmax(logits, dim=1)
-    predicted_class_idx = logits.argmax(-1).item()
-
-    print(f"--- Model Structure ---")
-    print(model.classifier_head)
-    print(f"\n--- Inference Results (Random) ---")
-    print(f"Logits: {logits.numpy()}")
-    print(f"Probabilities: {probabilities.numpy()}")
-    print(f"Predicted class: {predicted_class_idx}")
+    print(f"🔥 Модель: {model_name}")
+    print(f"Логиты: {logits.numpy()}")
+    print(f"Вероятности: {probs.numpy()}")
+    print(f"Предсказанный класс: {pred_class}")
 
 
 if __name__ == "__main__":

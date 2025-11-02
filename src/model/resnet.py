@@ -19,26 +19,24 @@ def load_resnet_from_weights(weights_path: str, num_classes: int) -> nn.Module:
 def create_resnet_classifier(
         num_classes: int = 1000,
         pretrained: bool = True,
-        freeze_backbone: bool = False,
+        train_only_last_layer: bool = False,
         weights: Optional[object] = None,
 ) -> Tuple[nn.Module, Optional[object]]:
     used_weights = weights if weights is not None else _get_default_weights(pretrained)
     model = models.resnet50(weights=used_weights)
 
     in_features = model.fc.in_features
-    if num_classes != model.fc.out_features:
-        model.fc = nn.Linear(in_features, num_classes)
-        nn.init.trunc_normal_(model.fc.weight, std=0.02)
-        if model.fc.bias is not None:
-            nn.init.zeros_(model.fc.bias)
+    model.fc = nn.Linear(in_features, num_classes)
+    nn.init.trunc_normal_(model.fc.weight, std=0.02)
+    if model.fc.bias is not None:
+        nn.init.zeros_(model.fc.bias)
 
-    if freeze_backbone:
+    if train_only_last_layer:
         for name, param in model.named_parameters():
-            if name.startswith("fc"):
-                param.requires_grad = True
-            else:
-                param.requires_grad = False
+            param.requires_grad = name.startswith("fc")
+
     return model, used_weights
+
 
 
 if __name__ == '__main__':
