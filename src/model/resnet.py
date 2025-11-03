@@ -3,25 +3,38 @@ import torch
 import torch.nn as nn
 from PIL import Image
 from torchvision import models
-from torchvision.models import ResNet50_Weights, ResNet152_Weights  # type: ignore
+from torchvision.models import ResNet50_Weights
 
 
 def _get_default_weights(pretrained: bool):
-    if pretrained:
-        return ResNet50_Weights.DEFAULT
-    return None
+    return ResNet50_Weights.DEFAULT if pretrained else None
 
-def load_resnet_from_weights(weights_path: str, num_classes: int) -> nn.Module:
-    model, _ = create_resnet_classifier(num_classes=num_classes, pretrained=False)
-    model.load_state_dict(torch.load(weights_path, map_location='cpu'))
-    return model
 
-def create_resnet_classifier(
+def freeze_partial_layers(model: nn.Module, trainable_ratio: float = 0.3):
+    """
+    Размораживает только часть последних слоёв модели.
+    trainable_ratio=0.3 → обучаем последние 30 % параметров.
+    """
+    all_layers = list(model.named_parameters())
+    total = len(all_layers)
+    cutoff = int(total * (1 - trainable_ratio))
+
+    for i, (_, p) in enumerate(all_layers):
+        p.requires_grad = i >= cutoff
+
+    print(f"✅ Fine-tuning {trainable_ratio * 100:.1f}% последних слоёв "
+          f"({total - cutoff} из {total})")
+
+
+def create_resnet_partial_classifier(
         num_classes: int = 1000,
         pretrained: bool = True,
-        train_only_last_layer: bool = False,
+        trainable_ratio: float = 0.3,
         weights: Optional[object] = None,
 ) -> Tuple[nn.Module, Optional[object]]:
+    """
+    Создаёт ResNet-50 и размораживает только часть последних слоёв.
+    """
     used_weights = weights if weights is not None else _get_default_weights(pretrained)
     model = models.resnet50(weights=used_weights)
 
@@ -31,35 +44,34 @@ def create_resnet_classifier(
     if model.fc.bias is not None:
         nn.init.zeros_(model.fc.bias)
 
-    if train_only_last_layer:
-        for name, param in model.named_parameters():
-            param.requires_grad = name.startswith("fc")
-
+    freeze_partial_layers(model, trainable_ratio=trainable_ratio)
     return model, used_weights
 
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     image_path = "../../data/mac-merged/0.png"
-    image = Image.open(image_path).convert('RGB')
+    image = Image.open(image_path).convert("RGB")
 
-    model, weights = create_resnet_classifier(num_classes=2, pretrained=True, freeze_backbone=True)
+    # Размораживаем последние 30 %
+    model, weights = create_resnet_partial_classifier(
+        num_classes=2,
+        pretrained=True,
+        trainable_ratio=0.3
+    )
     model.eval()
 
     preprocess = weights.transforms()
-
     input_tensor = preprocess(image)
     input_batch = input_tensor.unsqueeze(0)
 
     with torch.no_grad():
         output = model(input_batch)
 
-    probabilities = torch.nn.functional.softmax(output[0], dim=0)
-    predicted_class = torch.argmax(probabilities).item()
-    confidence = probabilities[predicted_class].item()
+    probs = torch.nn.functional.softmax(output[0], dim=0)
+    pred = torch.argmax(probs).item()
+    conf = probs[pred].item()
 
-    print(f"Image: {image_path}")
-    print(f"Image size: {image.size}")
-    print(f"Predicted class: {predicted_class}")
-    print(f"Confidence: {confidence:.4f}")
-    print(f"Class probabilities: {probabilities.tolist()}")
+    print(f"🖼 Image: {image_path}")
+    print(f"Predicted class: {pred}")
+    print(f"Confidence: {conf:.4f}")
+    print(f"Class probabilities: {probs.tolist()}")

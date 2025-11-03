@@ -7,23 +7,34 @@ from torchvision.models import Swin_T_Weights
 
 
 def _get_default_weights(pretrained: bool):
-    if pretrained:
-        return Swin_T_Weights.DEFAULT
-    return None
+    return Swin_T_Weights.DEFAULT if pretrained else None
 
 
-def load_swin_from_weights(weights_path: str, num_classes: int) -> nn.Module:
-    model, _ = create_swin_classifier(num_classes=num_classes, pretrained=False)
-    model.load_state_dict(torch.load(weights_path, map_location='cpu'))
-    return model
+def freeze_partial_layers(model: nn.Module, trainable_ratio: float = 0.3):
+    """
+    Замораживает верхние (1 - trainable_ratio) слоёв модели.
+    Например, trainable_ratio=0.3 → 30% последних слоёв остаются обучаемыми.
+    """
+    all_layers = list(model.named_parameters())
+    total_layers = len(all_layers)
+    cutoff = int(total_layers * (1 - trainable_ratio))
+
+    for i, (name, param) in enumerate(all_layers):
+        param.requires_grad = i >= cutoff
+
+    print(f"✅ Разморожено {total_layers - cutoff} из {total_layers} слоёв "
+          f"({trainable_ratio * 100:.1f}% модели).")
 
 
-def create_swin_classifier(
+def create_swin_partial_classifier(
         num_classes: int = 1000,
         pretrained: bool = True,
-        train_only_last_layer: bool = False,
+        trainable_ratio: float = 0.3,
         weights: Optional[object] = None,
 ) -> Tuple[nn.Module, Optional[object]]:
+    """
+    Создаёт Swin и размораживает только часть последних слоёв.
+    """
     used_weights = weights if weights is not None else _get_default_weights(pretrained)
     model = models.swin_t(weights=used_weights)
 
@@ -33,9 +44,8 @@ def create_swin_classifier(
     if model.head.bias is not None:
         nn.init.zeros_(model.head.bias)
 
-    if train_only_last_layer:
-        for name, param in model.named_parameters():
-            param.requires_grad = name.startswith("head")
+    # Замораживаем часть параметров (fine-tune только последние X%)
+    freeze_partial_layers(model, trainable_ratio=trainable_ratio)
 
     return model, used_weights
 
@@ -44,7 +54,12 @@ if __name__ == '__main__':
     image_path = "../../data/mac-merged/0.png"
     image = Image.open(image_path).convert('RGB')
 
-    model, weights = create_swin_classifier(num_classes=2, pretrained=True, train_only_last_layer=True)
+    model, weights = create_swin_partial_classifier(
+        num_classes=2,
+        pretrained=True,
+        trainable_ratio=0.3  # ← обучаем последние 30%
+    )
+
     model.eval()
 
     preprocess = weights.transforms()
@@ -54,12 +69,9 @@ if __name__ == '__main__':
     with torch.no_grad():
         output = model(input_batch)
 
-    probabilities = torch.nn.functional.softmax(output[0], dim=0)
-    predicted_class = torch.argmax(probabilities).item()
-    confidence = probabilities[predicted_class].item()
+    probs = torch.nn.functional.softmax(output[0], dim=0)
+    pred_class = probs.argmax().item()
+    conf = probs[pred_class].item()
 
-    print(f"Image: {image_path}")
-    print(f"Image size: {image.size}")
-    print(f"Predicted class: {predicted_class}")
-    print(f"Confidence: {confidence:.4f}")
-    print(f"Class probabilities: {probabilities.tolist()}")
+    print(f"Predicted class: {pred_class}")
+    print(f"Confidence: {conf:.4f}")

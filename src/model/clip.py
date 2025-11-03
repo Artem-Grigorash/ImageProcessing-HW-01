@@ -5,37 +5,47 @@ from PIL import Image
 import open_clip
 
 
-def create_clip_classifier(
+def freeze_partial_layers(model: nn.Module, trainable_ratio: float = 0.3):
+    """
+    Размораживает последние X% слоёв модели.
+    trainable_ratio=0.3 → обучаем последние 30% параметров.
+    """
+    all_params = list(model.named_parameters())
+    total = len(all_params)
+    cutoff = int(total * (1 - trainable_ratio))
+    for i, (_, p) in enumerate(all_params):
+        p.requires_grad = i >= cutoff
+
+    print(f"✅ Fine-tuning {trainable_ratio * 100:.1f}% последних слоёв "
+          f"({total - cutoff}/{total})")
+
+
+def create_clip_partial_classifier(
         num_classes: int = 1000,
         pretrained: bool = True,
-        train_only_last_layer: bool = False,
+        trainable_ratio: float = 0.3,
         model_name: str = "ViT-B-16",
         pretrained_dataset: str = "openai"
 ) -> Tuple[nn.Module, object]:
-    # Загружаем CLIP backbone через open_clip
+    """
+    Создаёт CLIP визуальный энкодер и размораживает только часть последних слоёв.
+    """
     model, _, preprocess = open_clip.create_model_and_transforms(
         model_name,
         pretrained=pretrained_dataset if pretrained else None
     )
 
-    # Визуальный backbone
     visual_encoder = model.visual
     in_features = visual_encoder.output_dim
 
-    # Классификационная голова
     classifier = nn.Linear(in_features, num_classes)
     nn.init.trunc_normal_(classifier.weight, std=0.02)
     if classifier.bias is not None:
         nn.init.zeros_(classifier.bias)
 
-    # Собираем в Sequential: (0) encoder + (1) head
     model = nn.Sequential(visual_encoder, classifier)
 
-    # Замораживаем энкодер, если нужно
-    if train_only_last_layer:
-        for name, param in model.named_parameters():
-            param.requires_grad = name.startswith("1")
-
+    freeze_partial_layers(model, trainable_ratio=trainable_ratio)
     return model, preprocess
 
 
@@ -43,10 +53,11 @@ if __name__ == "__main__":
     image_path = "../../data/mac-merged/0.png"
     image = Image.open(image_path).convert("RGB")
 
-    model, preprocess = create_clip_classifier(
+    # Fine-tune последних 30 % CLIP-энкодера
+    model, preprocess = create_clip_partial_classifier(
         num_classes=2,
         pretrained=True,
-        train_only_last_layer=True,  # только последний слой
+        trainable_ratio=0.3,
         model_name="ViT-B-16",
         pretrained_dataset="openai"
     )

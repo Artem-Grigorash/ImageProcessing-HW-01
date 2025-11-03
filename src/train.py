@@ -14,12 +14,12 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src.data.dataset import setup_dataset, get_dataloaders
-from src.model.clip import create_clip_classifier
+from src.model.clip import create_clip_partial_classifier
 from src.model.dino_vit import create_dino_vit_classifier
 from src.model.dino_convnext import create_dino_swin_classifier
-from src.model.resnet import create_resnet_classifier
-from src.model.swin import create_swin_classifier
-from src.model.vit import create_vit_classifier
+from src.model.resnet import create_resnet_partial_classifier
+from src.model.swin import create_swin_partial_classifier
+from src.model.vit import create_vit_partial_classifier
 
 warnings.filterwarnings("ignore", message=".*Redirects are currently not supported in Windows or MacOs.*")
 
@@ -223,12 +223,11 @@ if __name__ == '__main__':
     device = get_device()
     print(f"Selected device: {device}")
 
-    model, preprocess = create_clip_classifier(
+    model = create_dino_swin_classifier(
         num_classes=2,
         pretrained=True,
-        train_only_last_layer=True,  # только последний слой
-        model_name="ViT-B-16",
-        pretrained_dataset="openai"
+        trainable_ratio=0.3,
+
     )
     model = model.to(device)
 

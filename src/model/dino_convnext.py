@@ -6,7 +6,7 @@ from torchvision import transforms
 
 
 class DinoV3SwinClassifier(nn.Module):
-    def __init__(self, model_name: str, num_labels: int, train_only_last_layer: bool = False):
+    def __init__(self, model_name: str, num_labels: int, trainable_ratio: float = 0.3):
         super().__init__()
         self.num_labels = num_labels
 
@@ -17,10 +17,17 @@ class DinoV3SwinClassifier(nn.Module):
         # Классификационная голова
         self.classifier_head = nn.Linear(in_features, num_labels)
 
-        # Замораживаем весь backbone, если указано
-        if train_only_last_layer:
-            for param in self.base_model.parameters():
-                param.requires_grad = False
+        # Частичный fine-tuning
+        self._freeze_partial_layers(trainable_ratio)
+
+    def _freeze_partial_layers(self, trainable_ratio: float):
+        """Размораживает последние X% слоёв DINO."""
+        all_params = list(self.base_model.named_parameters())
+        total = len(all_params)
+        cutoff = int(total * (1 - trainable_ratio))
+        for i, (_, p) in enumerate(all_params):
+            p.requires_grad = i >= cutoff
+        print(f"✅ Fine-tuning {trainable_ratio * 100:.1f}% последних слоёв ({total - cutoff}/{total})")
 
     def forward(self, x: torch.Tensor):
         features = self.base_model(x)
@@ -31,10 +38,10 @@ class DinoV3SwinClassifier(nn.Module):
 def create_dino_swin_classifier(
         num_classes: int = 2,
         pretrained: bool = True,
-        train_only_last_layer: bool = False,
+        trainable_ratio: float = 0.3,
         model_name: str = "vit_base_patch16_dinov3"
 ) -> DinoV3SwinClassifier:
-    model = DinoV3SwinClassifier(model_name, num_classes, train_only_last_layer)
+    model = DinoV3SwinClassifier(model_name, num_classes, trainable_ratio)
     return model
 
 
@@ -42,32 +49,28 @@ def load_dinoV3_swin():
     model_name = "vit_base_patch16_dinov3"
     image_path = "data/mac-merged/0.png"
 
-    # Препроцессинг картинки под timm
+    # Препроцессинг под timm
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.ToTensor(),
-        transforms.Normalize(
-            mean=(0.5, 0.5, 0.5),
-            std=(0.5, 0.5, 0.5)
-        ),
+        transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
     ])
 
     try:
-        image = Image.open(image_path).convert('RGB')
+        image = Image.open(image_path).convert("RGB")
     except FileNotFoundError:
         print(f"❌ Файл не найден: {image_path}")
         return
 
     image_tensor = transform(image).unsqueeze(0)
 
-    # Создаём модель: backbone заморожен, учится только последний слой
+    # Fine-tune последних 30 %
     model = create_dino_swin_classifier(
         num_classes=2,
         pretrained=True,
-        train_only_last_layer=True,
+        trainable_ratio=0.3,
         model_name=model_name
     )
-
     model.eval()
 
     with torch.no_grad():
